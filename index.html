@@ -241,7 +241,6 @@ async function getToken(){
   }catch(e){setSync('off');throw e;}
 }
 async function gReq(method,path,body){
-  setSync('sync');
   try{
     const tok=await getToken();
     const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SID}${path}`,{method,headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
@@ -252,327 +251,28 @@ async function appendRow(aba,vals){
   return gReq('POST',`/values/${encodeURIComponent(aba)}!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,{values:[vals]});
 }
 async function initSheets(){
-  try{
-    const info=await gReq('GET','');
-    const abas=(info.sheets||[]).map(s=>s.properties.title);
-    const criar=['Vendas','Pedidos','Faturamento','Estoque'].filter(n=>!abas.includes(n));
-    if(criar.length){
-      await gReq('POST',':batchUpdate',{requests:criar.map(t=>({addSheet:{properties:{title:t}}}))});
-      if(criar.includes('Vendas')) await appendRow('Vendas',['Data','Hr Abertura','Hr Fechamento','Cliente','Mesa/Quadra','Total Consumido (R$)','Adiantado (R$)','Total Pago (R$)','Forma de Pagamento']);
-      if(criar.includes('Pedidos')) await appendRow('Pedidos',['Data','Hora','Cliente','Mesa/Quadra','Produto','Categoria','Qtd','Preco Unit (R$)','Subtotal (R$)']);
-      if(criar.includes('Faturamento')) await appendRow('Faturamento',['Data','Hr Fechamento','Cliente','Mesa/Quadra','Total (R$)','Adiantado (R$)','Total Pago (R$)','Forma de Pagamento','Comandas no Dia','Faturamento do Dia (R$)']);
-      if(criar.includes('Estoque')) await initEstoque();
-    }
-    setSync('ok');
-  }catch(e){setSync('off');}
+  // Roda 100% em background — nunca bloqueia o app
+  setTimeout(async()=>{
+    try{
+      await getToken();
+      setSync('ok');
+      // Verificar/criar abas se necessário
+      try{
+        const info=await gReq('GET','');
+        const abas=(info.sheets||[]).map(s=>s.properties.title);
+        const criar=['Vendas','Pedidos','Faturamento','Estoque'].filter(n=>!abas.includes(n));
+        if(criar.length){
+          await gReq('POST',':batchUpdate',{requests:criar.map(t=>({addSheet:{properties:{title:t}}}))});
+          if(criar.includes('Vendas')) await appendRow('Vendas',['Data','Hr Abertura','Hr Fechamento','Cliente','Mesa/Quadra','Total Consumido (R$)','Adiantado (R$)','Total Pago (R$)','Forma de Pagamento']);
+          if(criar.includes('Pedidos')) await appendRow('Pedidos',['Data','Hora','Cliente','Mesa/Quadra','Produto','Categoria','Qtd','Preco Unit (R$)','Subtotal (R$)']);
+          if(criar.includes('Faturamento')) await appendRow('Faturamento',['Data','Hr Fechamento','Cliente','Mesa/Quadra','Total (R$)','Adiantado (R$)','Total Pago (R$)','Forma de Pagamento','Comandas no Dia','Faturamento do Dia (R$)']);
+          if(criar.includes('Estoque')) await initEstoque();
+        }
+      }catch(e){console.log('Setup abas:',e);}
+    }catch(e){setSync('off');}
+  },500);
 }
 
-// ── ESTADO ──
-const CARDAPIO_PADRAO=[
-  {cat:"🍺 Cervejas",itens:[
-    {nome:"Heineken",preco:10},
-    {nome:"Corona",preco:11},
-    {nome:"Bud",preco:9},
-    {nome:"Stella",preco:9},
-    {nome:"Cabare Ice",preco:12},
-    {nome:"Buxudinha",preco:5}
-  ]},
-  {cat:"🥤 Refrigerantes",itens:[
-    {nome:"Refri 2L",preco:12},
-    {nome:"Refri 1L",preco:9.5},
-    {nome:"Lata Coca",preco:5},
-    {nome:"Lata Coca Zero",preco:5},
-    {nome:"Lata Fanta Laranja",preco:5},
-    {nome:"Lata Fanta Uva",preco:5},
-    {nome:"Lata Sprite",preco:5},
-    {nome:"Lata São Geraldo",preco:5},
-    {nome:"Energetico",preco:13}
-  ]},
-  {cat:"🥃 Cachaça",itens:[
-    {nome:"Ypioca 1L",preco:30},
-    {nome:"Ypioca 1/2 Litro",preco:15},
-    {nome:"Ypioca Dose",preco:2}
-  ]},
-  {cat:"🍢 Espetinhos",itens:[
-    {nome:"Espeto Medalhao",preco:8},
-    {nome:"Espeto Carne",preco:7.5},
-    {nome:"Espeto Linguica",preco:7.5},
-    {nome:"Espeto Coracao de Frango",preco:7},
-    {nome:"Espeto Porco",preco:6.5}
-  ]},
-  {cat:"🍽️ Petiscos",itens:[
-    {nome:"Baiao Inteiro",preco:8},
-    {nome:"Baiao Meio",preco:4},
-    {nome:"Pratinho",preco:8},
-    {nome:"Salgados",preco:6}
-  ]},
-  {cat:"🍬 Doces",itens:[
-    {nome:"Trufa",preco:4},
-    {nome:"Fini",preco:2},
-    {nome:"Sonho de Valsa",preco:2},
-    {nome:"Ouro Branco",preco:2},
-    {nome:"Doce de Lei em Cubo",preco:7.5},
-    {nome:"Chilito Pequeno",preco:1.5},
-    {nome:"Chilito Grande",preco:3},
-    {nome:"Pop",preco:1}
-  ]},
-  {cat:"💧 Agua",itens:[
-    {nome:"Agua",preco:2.5},
-    {nome:"Agua C/ Gas",preco:3}
-  ]}
-];
-function salvarCardapio(){try{localStorage.setItem('cardapio_bar',JSON.stringify(cardapio));}catch(e){}}
-function carregarCardapio(){try{const v=localStorage.getItem('cardapio_ver');if(v!=='2'){localStorage.removeItem('cardapio_bar');localStorage.setItem('cardapio_ver','5');}const s=localStorage.getItem('cardapio_bar');return s?JSON.parse(s):JSON.parse(JSON.stringify(CARDAPIO_PADRAO));}catch(e){return JSON.parse(JSON.stringify(CARDAPIO_PADRAO));}}
-let cardapio=carregarCardapio();
-let comandas={},historico=[],abaAtiva=null,view="comandas",contaId=null,adianId=null,catSel=0,pgtoSel=null;
-
-function hora(){return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
-function dHoje(){return new Date().toLocaleDateString('pt-BR');}
-function fmt(v){return 'R$ '+v.toFixed(2).replace('.',',');}
-function total(id){return comandas[id].itens.reduce((s,i)=>s+i.preco*i.qtd,0);}
-function rest(id){return Math.max(0,total(id)-comandas[id].adiantado);}
-function setSync(s){
-  const d=document.getElementById('sdot'),t=document.getElementById('stxt');
-  if(s==='ok'){d.className='sdot';t.textContent='Sincronizado';}
-  else if(s==='sync'){d.className='sdot sync';t.textContent='Salvando...';}
-  else{d.className='sdot off';t.textContent='Sem conexão';}
-}
-function toast(msg,tipo){
-  const el=document.getElementById('toast');
-  el.textContent=msg;el.className='toast show '+(tipo==='err'?'terr':'tok');
-  setTimeout(()=>el.className='toast',2800);
-}
-
-function selPgto(v){
-  pgtoSel=v;
-  ['pix','din','car'].forEach(k=>document.getElementById('pgto-'+k).classList.remove('on'));
-  const map={PIX:'pix',DINHEIRO:'din','CARTÃO':'car'};
-  document.getElementById('pgto-'+map[v]).classList.add('on');
-}
-
-function cancelarComanda(id){
-  if(!confirm('Cancelar a comanda de '+comandas[id].nome+'? Ela será removida sem registro.'))return;
-  delete comandas[id];
-  const ids=Object.keys(comandas);abaAtiva=ids.length>0?ids[0]:null;
-  renderTudo();if(abaAtiva)ativarAba(abaAtiva);else irView('comandas');
-  toast('🚫 Comanda cancelada');
-}
-
-function criarComanda(){
-  const nome=document.getElementById('f-nome').value.trim();
-  const mesa=document.getElementById('f-mesa').value.trim();
-  if(!nome){document.getElementById('f-nome').focus();return;}
-  const id=Date.now().toString();
-  comandas[id]={nome,mesa:mesa||'—',hora:hora(),itens:[],adiantado:0};
-  fecharModal('m-nova');
-  document.getElementById('f-nome').value='';document.getElementById('f-mesa').value='';
-  renderTudo();ativarAba(id);irView('comandas');
-  toast('✅ Comanda de '+nome+' aberta');
-}
-
-async function addItem(cid,nome,preco){
-  const ex=comandas[cid].itens.find(i=>i.nome===nome);
-  const cat=cardapio.find(c=>c.itens.find(i=>i.nome===nome))?.cat||'';
-  if(ex)ex.qtd++;
-  else comandas[cid].itens.push({nome,preco,qtd:1,hora:hora(),cat});
-  renderPainel(cid);renderAbas();
-  if(navigator.vibrate)navigator.vibrate(25);
-  const c=comandas[cid],item=c.itens.find(i=>i.nome===nome);
-  try{
-    await appendRow('Pedidos',[dHoje(),hora(),c.nome,c.mesa,nome,cat,1,preco,preco]);
-    await descontarEstoque(nome,1);
-  }catch(e){toast('⚠️ Sem conexão — salvo localmente','err');}
-}
-
-function chgQtd(cid,idx,d){
-  comandas[cid].itens[idx].qtd+=d;
-  if(comandas[cid].itens[idx].qtd<=0)comandas[cid].itens.splice(idx,1);
-  renderPainel(cid);renderAbas();
-}
-
-function abrirAdiantamento(id){adianId=id;document.getElementById('f-adian').value=comandas[id].adiantado||'';abrirModal('m-adian');}
-function confAdian(){
-  const v=parseFloat(document.getElementById('f-adian').value)||0;
-  comandas[adianId].adiantado=v;fecharModal('m-adian');
-  renderPainel(adianId);renderAbas();toast('💵 Adiantamento de '+fmt(v)+' registrado');
-}
-
-function abrirConta(id){
-  pgtoSel=null;['pix','din','car'].forEach(k=>document.getElementById('pgto-'+k).classList.remove('on'));
-  contaId=id;const c=comandas[id],tot=total(id),adian=c.adiantado,pagar=Math.max(0,tot-adian);
-  let h='';c.itens.forEach(i=>{h+=`<div class="crow"><span>${i.qtd}x ${i.nome}</span><span>${fmt(i.preco*i.qtd)}</span></div>`;});
-  document.getElementById('mc-itens').innerHTML=h;
-  document.getElementById('mc-cons').textContent=fmt(tot);
-  const ra=document.getElementById('mc-rowad');
-  if(adian>0){ra.style.display='flex';document.getElementById('mc-ad').textContent='− '+fmt(adian);}else ra.style.display='none';
-  const el=document.getElementById('mc-tot');el.textContent=fmt(pagar);el.style.color=pagar<=0?'#4caf50':'var(--am)';
-  abrirModal('m-conta');
-}
-
-async function confPagamento(){
-  if(!pgtoSel){toast('⚠️ Selecione a forma de pagamento','err');return;}
-  const btn=document.getElementById('btn-pago');btn.disabled=true;btn.textContent='Salvando...';
-  const c=comandas[contaId],tot=total(contaId),pagar=Math.max(0,tot-c.adiantado),hf=hora();
-  try{
-    await appendRow('Vendas',[dHoje(),c.hora,hf,c.nome,c.mesa,tot,c.adiantado,pagar,pgtoSel]);
-    const fatAcum=historico.reduce((s,h)=>s+h.total,0)+tot;
-    await appendRow('Faturamento',[dHoje(),hf,c.nome,c.mesa,tot,c.adiantado,pagar,pgtoSel,historico.length+1,fatAcum]);
-    toast('✅ Venda salva no Google Sheets!');
-  }catch(e){toast('⚠️ Salvo só localmente — sem internet','err');}
-  historico.push({nome:c.nome,mesa:c.mesa,horaA:c.hora,horaF:hf,itens:[...c.itens],total:tot,adiantado:c.adiantado,pgto:pgtoSel});
-  delete comandas[contaId];contaId=null;
-  btn.disabled=false;btn.textContent='PAGO ✓';
-  fecharModal('m-conta');
-  const ids=Object.keys(comandas);abaAtiva=ids.length>0?ids[0]:null;
-  renderTudo();if(abaAtiva)ativarAba(abaAtiva);else irView('comandas');
-}
-
-function renderAbas(){
-  const w=document.getElementById('abas-wrap');w.innerHTML='';
-  Object.entries(comandas).forEach(([id,c])=>{
-    const qtd=c.itens.reduce((s,i)=>s+i.qtd,0);
-    const d=document.createElement('div');d.className='aba'+(id===abaAtiva?' on':'');
-    d.onclick=()=>{ativarAba(id);irView('comandas');};
-    d.innerHTML=`${c.nome}${qtd>0?`<span class="bdg">${qtd}</span>`:''}`;
-    w.appendChild(d);
-  });
-}
-
-function renderPaineis(){
-  const cont=document.getElementById('paineis');cont.innerHTML='';
-  Object.keys(comandas).forEach(id=>{
-    const d=document.createElement('div');d.className='pan'+(id===abaAtiva?' on':'');d.id='pan-'+id;
-    cont.appendChild(d);renderPainel(id);
-  });
-}
-
-function renderPainel(id){
-  const el=document.getElementById('pan-'+id);if(!el)return;
-  const c=comandas[id],tot=total(id),adian=c.adiantado,rs=Math.max(0,tot-adian);
-  const buscaId='busca-'+id;
-  let ch=`
-    <div class="busca-wrap">
-      <span class="busca-icon">🔍</span>
-      <input class="busca-input" id="${buscaId}" type="text" placeholder="Buscar produto..." oninput="filtrarCardapio('${id}')" autocomplete="off">
-      <button class="busca-clear" id="busca-clear-${id}" onclick="limparBusca('${id}')">✕</button>
-    </div>
-    <div id="cardapio-${id}"></div>`;
-  // cardápio será renderizado separadamente pela função filtrarCardapio
-  let ih='';
-  if(c.itens.length>0){
-    ih=`<div class="itens-list"><div class="sec-title" style="margin-top:6px">ITENS NA COMANDA</div>`;
-    c.itens.forEach((item,idx)=>{ih+=`<div class="item-row"><div class="inome">${item.nome}<span class="ihora">${item.hora}</span></div><div class="qtd-ctrl"><button class="bq m" onclick="chgQtd('${id}',${idx},-1)">−</button><div class="iqtd">${item.qtd}</div><button class="bq p" onclick="chgQtd('${id}',${idx},1)">+</button></div><div class="isub">${fmt(item.preco*item.qtd)}</div></div>`;});
-    ih+=`</div>`;
-  }
-  const btnAd=adian>0?`💵 ADIANTAMENTO: ${fmt(adian)}`:`💵 REGISTRAR ADIANTAMENTO`;
-  const btnF=c.itens.length>0?`<button class="btn-full bla" style="margin-top:4px" onclick="abrirConta('${id}')">💰 FECHAR CONTA — ${fmt(rs)}</button>`:'';
-  const btnCancel=`<button class="btn-full" style="margin-top:4px;background:#2a2a2a;color:var(--t2);border:1px solid var(--b)" onclick="cancelarComanda('${id}')">🚫 CANCELAR COMANDA</button>`;
-  el.innerHTML=`
-    <div class="cli-hdr"><div class="cli-nome">${c.nome}</div><div class="cli-tags"><div class="cli-tag">📍 <b>${c.mesa}</b></div><div class="cli-tag">🕐 <b>${c.hora}</b></div></div></div>
-    <div class="saldo-bar">
-      <div class="saldo-card"><div class="saldo-lbl">Consumido</div><div class="saldo-val cam">${fmt(tot)}</div></div>
-      <div class="saldo-card"><div class="saldo-lbl">Adiantado</div><div class="saldo-val cvd">${fmt(adian)}</div></div>
-      <div class="saldo-card"><div class="saldo-lbl">A Pagar</div><div class="saldo-val ${rs<=0?'cvd':'cvm'}">${fmt(rs)}</div></div>
-    </div>${ch}${ih}
-    <button class="btn-full bam" style="margin-top:16px" onclick="abrirAdiantamento('${id}')">${btnAd}</button>${btnF}${btnCancel}`;
-  filtrarCardapio(id);
-}
-
-function filtrarCardapio(id){
-  const inputEl=document.getElementById('busca-'+id);
-  const clearEl=document.getElementById('busca-clear-'+id);
-  const container=document.getElementById('cardapio-'+id);
-  if(!container)return;
-  const removeAcentos=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-  const termo=removeAcentos(inputEl?inputEl.value:'').trim();
-  if(clearEl) clearEl.style.display=termo?'block':'none';
-  let html='';
-  if(termo===''){
-    // Mostrar cardápio completo por categoria
-    cardapio.forEach(cat=>{
-      const itens=cat.itens;
-      if(!itens.length)return;
-      html+=`<div class="cat-lbl">${cat.cat}</div><div class="grid2">`;
-      itens.forEach(p=>{html+=`<button class="btn-prod" onclick="addItem('${id}','${p.nome}',${p.preco})"><div class="pnome">${p.nome}</div><div class="ppreco">${fmt(p.preco)}</div></button>`;});
-      html+=`</div>`;
-    });
-  } else {
-    // Filtrar por termo
-    const resultados=[];
-    cardapio.forEach(cat=>{
-      cat.itens.forEach(p=>{
-        if(removeAcentos(p.nome).includes(termo)) resultados.push({...p,cat:cat.cat});
-      });
-    });
-    if(resultados.length===0){
-      html=`<div class="busca-vazia">🔍 Nenhum produto encontrado para "<b>${termo}</b>"</div>`;
-    } else {
-      html+=`<div class="sec-title" style="margin-bottom:10px">${resultados.length} RESULTADO${resultados.length>1?'S':''}</div><div class="grid2">`;
-      resultados.forEach(p=>{html+=`<button class="btn-prod" onclick="addItem('${id}','${p.nome}',${p.preco})"><div class="pnome">${p.nome}</div><div class="ppreco">${fmt(p.preco)}</div></button>`;});
-      html+=`</div>`;
-    }
-  }
-  if(container) container.innerHTML=html;
-}
-
-function limparBusca(id){
-  const inputEl=document.getElementById('busca-'+id);
-  if(inputEl){inputEl.value='';inputEl.focus();}
-  filtrarCardapio(id);
-}
-
-
-// ── ESTOQUE ──
-const ESTOQUE_ROWS = [
-    ["Heineken",24,6,"Heineken"],
-    ["Bud",24,6,"Bud"],
-    ["Stella",24,6,"Stella"],
-    ["Corona",12,4,"Corona"],
-    ["Cabare Ice",24,6,"Cabare Ice"],
-    ["Buxudinha",48,12,"Buxudinha"],
-    ["Refri 2L",12,3,"Refri 2L"],
-    ["Refri 1L",12,3,"Refri 1L"],
-    ["Lata Coca",24,6,"Lata Coca"],
-    ["Lata Coca Zero",24,6,"Lata Coca Zero"],
-    ["Lata Fanta Laranja",12,4,"Lata Fanta Laranja"],
-    ["Lata Fanta Uva",12,4,"Lata Fanta Uva"],
-    ["Lata Sprite",12,4,"Lata Sprite"],
-    ["Lata Sao Geraldo",12,4,"Lata Sao Geraldo"],
-    ["Energetico",12,4,"Energetico"],
-    ["Agua",24,6,"Agua"],
-    ["Agua C/ Gas",12,4,"Agua C/ Gas"],
-    ["Ypioca 1L",6,2,"Ypioca 1L"],
-    ["Ypioca 1/2 Litro",6,2,"Ypioca 1/2 Litro"],
-    ["Ypioca Dose",50,10,"Ypioca Dose"],
-    ["Espeto Medalhao",20,5,"Espeto Medalhao"],
-    ["Espeto Carne",20,5,"Espeto Carne"],
-    ["Espeto Linguica",20,5,"Espeto Linguica"],
-    ["Espeto Coracao de Frango",20,5,"Espeto Coracao de Frango"],
-    ["Espeto Porco",20,5,"Espeto Porco"],
-    ["Baiao Inteiro",10,3,"Baiao Inteiro"],
-    ["Baiao Meio",10,3,"Baiao Meio"],
-    ["Pratinho",10,3,"Pratinho"],
-    ["Salgados",20,5,"Salgados"],
-    ["Trufa",20,5,"Trufa"],
-    ["Fini",30,10,"Fini"],
-    ["Sonho de Valsa",20,5,"Sonho de Valsa"],
-    ["Ouro Branco",20,5,"Ouro Branco"],
-    ["Doce de Lei em Cubo",20,5,"Doce de Lei em Cubo"],
-    ["Chilito Pequeno",30,10,"Chilito Pequeno"],
-    ["Chilito Grande",20,5,"Chilito Grande"],
-    ["Pop",30,10,"Pop"]
-];
-
-async function initEstoque(){
-  // Cabeçalho
-  await appendRow('Estoque',['Produto','Qtd Atual','Qtd Minima','Referencia (nome no app)','Status']);
-  // Produtos
-  for(const r of ESTOQUE_ROWS){
-    await appendRow('Estoque',[r[0],r[1],r[2],r[3],'OK']);
-  }
-  // Aplicar formatação condicional via batchUpdate
-  await aplicarFormatacaoEstoque();
-}
 
 async function aplicarFormatacaoEstoque(){
   try{
@@ -710,6 +410,7 @@ document.querySelectorAll('.overlay').forEach(o=>{o.addEventListener('click',e=>
 document.getElementById('f-mesa').addEventListener('keydown',e=>{if(e.key==='Enter')criarComanda();});
 document.getElementById('f-nome').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('f-mesa').focus();});
 renderTudo();
+setSync('off');
 initSheets();
 </script>
 </body>
