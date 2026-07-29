@@ -254,13 +254,14 @@ async function initSheets(){
       try{
         var info=await gReq('GET','');
         var abas=(info.sheets||[]).map(function(s){return s.properties.title;});
-        var criar=['Vendas','Pedidos','Faturamento','Estoque'].filter(function(n){return !abas.includes(n);});
+        var criar=['Vendas','Pedidos','Faturamento','Estoque','Abertas'].filter(function(n){return !abas.includes(n);});
         if(criar.length){
           await gReq('POST',':batchUpdate',{requests:criar.map(function(t){return {addSheet:{properties:{title:t}}};})});
           if(criar.includes('Vendas'))await appendRow('Vendas',['Data','Hr Abertura','Hr Fechamento','Cliente','Mesa','Total (R$)','Adiantado (R$)','Total Pago (R$)','Pagamento']);
           if(criar.includes('Pedidos'))await appendRow('Pedidos',['Data','Hora','Cliente','Mesa','Produto','Categoria','Qtd','Preco','Subtotal']);
           if(criar.includes('Faturamento'))await appendRow('Faturamento',['Data','Hr Fechamento','Cliente','Mesa','Total (R$)','Adiantado (R$)','Total Pago (R$)','Pagamento','Num Comandas','Fat Dia (R$)']);
           if(criar.includes('Estoque'))await initEstoque();
+          if(criar.includes('Abertas'))await appendRow('Abertas',['ESTADO_JSON']);
         }
       }catch(e){console.log('setup',e);}
     }catch(e){setSync('off');}
@@ -273,7 +274,7 @@ var ESTOQUE_ROWS=[
   ['Agua',24,6],['Agua C/ Gas',12,4],['Ypioca 1L',6,2],['Ypioca 1/2 Litro',6,2],['Ypioca Dose',50,10],
   ['Espeto Medalhao',20,5],['Espeto Carne',20,5],['Espeto Linguica',20,5],['Espeto Coracao de Frango',20,5],['Espeto Porco',20,5],
   ['Baiao Inteiro',10,3],['Baiao Meio',10,3],['Pratinho',10,3],['Salgados',20,5],
-  ['Trufa',20,5],['Fini',30,10],['Sonho de Valsa',20,5],['Ouro Branco',20,5],['Doce de Lei em Cubo',20,5],['Chilito Pequeno',30,10],['Chilito Grande',20,5],['Pop',30,10]
+  ['Trufa',20,5],['Fini',30,10],['Chocolate',20,5],['Doce de Lei em Cubo',20,5],['Chilito Pequeno',30,10],['Chilito Grande',20,5],['Pop',30,10],['Halls',30,10],['Trident',30,10]
 ];
 async function initEstoque(){
   await appendRow('Estoque',['Produto','Qtd Atual','Qtd Minima','Status']);
@@ -298,26 +299,57 @@ async function descontarEstoque(nome,qtd){
     await gReq('PUT','/values/Estoque!B'+idx+':D'+idx+'?valueInputOption=USER_ENTERED',{values:[[nova,min,status]]});
   }catch(e){console.log('estoque',e);}
 }
+
+async function salvarEstado(){
+  try{
+    estadoTs=Date.now();
+    var pacote=JSON.stringify({ts:estadoTs,comandas:comandas,historico:historico});
+    await gReq('PUT','/values/Abertas!A2?valueInputOption=RAW',{values:[[pacote]]});
+  }catch(e){console.log('salvarEstado',e);}
+}
+async function carregarEstado(){
+  if(syncPausado)return;
+  if(document.querySelector('.overlay.on'))return;
+  var ae=document.activeElement;
+  if(ae&&ae.tagName==='INPUT')return;
+  try{
+    var d=await gReq('GET','/values/Abertas!A2');
+    if(!d.values||!d.values[0]||!d.values[0][0])return;
+    var pac=JSON.parse(d.values[0][0]);
+    if(!pac.ts||pac.ts<=estadoTs)return;
+    estadoTs=pac.ts;
+    comandas=pac.comandas||{};
+    historico=pac.historico||[];
+    var ids=Object.keys(comandas);
+    if(abaAtiva&&!comandas[abaAtiva])abaAtiva=ids.length?ids[0]:null;
+    if(!abaAtiva&&ids.length)abaAtiva=ids[0];
+    renderTudo();
+    if(abaAtiva)ativarAba(abaAtiva);
+  }catch(e){console.log('carregarEstado',e);}
+}
+function iniciarSync(){setInterval(carregarEstado,7000);setTimeout(carregarEstado,1500);}
+
 var CARDAPIO_PADRAO=[
   {cat:'🍺 Cervejas',itens:[{nome:'Heineken',preco:10},{nome:'Bud',preco:9},{nome:'Stella',preco:9},{nome:'Corona',preco:11},{nome:'Cabare Ice',preco:12},{nome:'Buxudinha',preco:5}]},
   {cat:'🥤 Refrigerantes',itens:[{nome:'Refri 2L',preco:12},{nome:'Refri 1L',preco:9.5},{nome:'Lata Coca',preco:5},{nome:'Lata Coca Zero',preco:5},{nome:'Lata Fanta Laranja',preco:5},{nome:'Lata Fanta Uva',preco:5},{nome:'Lata Sprite',preco:5},{nome:'Lata Sao Geraldo',preco:5},{nome:'Energetico',preco:13}]},
   {cat:'🥃 Cachaca',itens:[{nome:'Ypioca 1L',preco:30},{nome:'Ypioca 1/2 Litro',preco:15},{nome:'Ypioca Dose',preco:2}]},
-  {cat:'🍢 Espetinhos',itens:[{nome:'Espeto Medalhao',preco:8},{nome:'Espeto Carne',preco:7.5},{nome:'Espeto Linguica',preco:7.5},{nome:'Espeto Coracao de Frango',preco:7},{nome:'Espeto Porco',preco:6.5}]},
+  {cat:'🍢 Espetinhos',itens:[{nome:'Espeto Medalhao',preco:8},{nome:'Espeto Carne',preco:7.5},{nome:'Espeto Linguica',preco:7.5},{nome:'Espeto Coracao de Frango',preco:7.5},{nome:'Espeto Porco',preco:6.5}]},
   {cat:'🍽 Petiscos',itens:[{nome:'Baiao Inteiro',preco:8},{nome:'Baiao Meio',preco:4},{nome:'Pratinho',preco:8},{nome:'Salgados',preco:6}]},
-  {cat:'🍬 Doces',itens:[{nome:'Trufa',preco:4},{nome:'Fini',preco:2},{nome:'Sonho de Valsa',preco:2},{nome:'Ouro Branco',preco:2},{nome:'Doce de Lei em Cubo',preco:7.5},{nome:'Chilito Pequeno',preco:1.5},{nome:'Chilito Grande',preco:3},{nome:'Pop',preco:1}]},
+  {cat:'🍬 Doces',itens:[{nome:'Trufa',preco:4},{nome:'Fini',preco:2},{nome:'Chocolate',preco:2},{nome:'Doce de Lei em Cubo',preco:1},{nome:'Chilito Pequeno',preco:1.5},{nome:'Chilito Grande',preco:3},{nome:'Pop',preco:1},{nome:'Halls',preco:2.5},{nome:'Trident',preco:3.5}]},
   {cat:'💧 Agua',itens:[{nome:'Agua',preco:2.5},{nome:'Agua C/ Gas',preco:3}]}
 ];
 function salvarCardapio(){try{localStorage.setItem('cardapio_bar',JSON.stringify(cardapio));}catch(e){}}
 function carregarCardapio(){
   try{
     var v=localStorage.getItem('cardapio_ver');
-    if(v!=='6'){localStorage.removeItem('cardapio_bar');localStorage.setItem('cardapio_ver','6');}
+    if(v!=='8'){localStorage.removeItem('cardapio_bar');localStorage.setItem('cardapio_ver','8');}
     var s=localStorage.getItem('cardapio_bar');
     return s?JSON.parse(s):JSON.parse(JSON.stringify(CARDAPIO_PADRAO));
   }catch(e){return JSON.parse(JSON.stringify(CARDAPIO_PADRAO));}
 }
 var cardapio=carregarCardapio();
 var comandas={},historico=[],abaAtiva=null,view='comandas',contaId=null,adianId=null,catSel=0,pgtoSel=null;
+var buscaTermos={},estadoTs=0,syncPausado=false;
 function hora(){return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
 function dHoje(){return new Date().toLocaleDateString('pt-BR');}
 function fmt(v){return 'R$ '+v.toFixed(2).replace('.',',');}
@@ -345,6 +377,7 @@ function cancelarComanda(id){
   delete comandas[id];
   var ids=Object.keys(comandas);abaAtiva=ids.length>0?ids[0]:null;
   renderTudo();if(abaAtiva)ativarAba(abaAtiva);else irView('comandas');
+  salvarEstado();
   toast('Comanda cancelada');
 }
 function criarComanda(){
@@ -356,6 +389,7 @@ function criarComanda(){
   fecharModal('m-nova');
   document.getElementById('f-nome').value='';document.getElementById('f-mesa').value='';
   renderTudo();ativarAba(id);irView('comandas');
+  salvarEstado();
   toast('Comanda de '+nome+' aberta');
 }
 async function addItem(cid,nome,preco){
@@ -364,22 +398,25 @@ async function addItem(cid,nome,preco){
   if(ex)ex.qtd++;
   else comandas[cid].itens.push({nome:nome,preco:preco,qtd:1,hora:hora(),cat:cat.cat});
   renderPainel(cid);renderAbas();
+  var bel=document.getElementById('busca-'+cid);
+  if(bel&&buscaTermos[cid]){bel.value=buscaTermos[cid];filtrarCardapio(cid);}
   if(navigator.vibrate)navigator.vibrate(25);
   try{
     await appendRow('Pedidos',[dHoje(),hora(),comandas[cid].nome,comandas[cid].mesa,nome,cat.cat,1,preco,preco]);
     await descontarEstoque(nome,1);
+    await salvarEstado();
   }catch(e){toast('Sem conexao - salvo local','err');}
 }
 function chgQtd(cid,idx,d){
   comandas[cid].itens[idx].qtd+=d;
   if(comandas[cid].itens[idx].qtd<=0)comandas[cid].itens.splice(idx,1);
-  renderPainel(cid);renderAbas();
+  renderPainel(cid);renderAbas();salvarEstado();
 }
 function abrirAdiantamento(id){adianId=id;document.getElementById('f-adian').value=comandas[id].adiantado||'';abrirModal('m-adian');}
 function confAdian(){
   var v=parseFloat(document.getElementById('f-adian').value)||0;
   comandas[adianId].adiantado=v;fecharModal('m-adian');
-  renderPainel(adianId);renderAbas();toast('Adiantamento de '+fmt(v)+' registrado');
+  renderPainel(adianId);renderAbas();salvarEstado();toast('Adiantamento de '+fmt(v)+' registrado');
 }
 function abrirConta(id){
   pgtoSel=null;['pix','din','car'].forEach(function(k){document.getElementById('pgto-'+k).classList.remove('on');});
@@ -405,6 +442,7 @@ async function confPagamento(){
   historico.push({nome:c.nome,mesa:c.mesa,horaA:c.hora,horaF:hf,itens:c.itens.slice(),total:tot,adiantado:c.adiantado,pgto:pgtoSel});
   delete comandas[contaId];contaId=null;
   btn.disabled=false;btn.textContent='PAGO';
+  salvarEstado();
   fecharModal('m-conta');
   var ids=Object.keys(comandas);abaAtiva=ids.length>0?ids[0]:null;
   renderTudo();if(abaAtiva)ativarAba(abaAtiva);else irView('comandas');
@@ -429,7 +467,7 @@ function renderPaineis(){
 function renderPainel(id){
   var el=document.getElementById('pan-'+id);if(!el)return;
   var c=comandas[id],tot=total(id),adian=c.adiantado,rs=Math.max(0,tot-adian);
-  var cardHtml='<div class="busca-wrap"><span class="busca-icon">🔍</span><input class="busca-input" id="busca-'+id+'" type="text" placeholder="Buscar produto..." oninput="filtrarCardapio(\''+id+'\')" autocomplete="off"><button class="busca-clear" id="busca-clear-'+id+'" onclick="limparBusca(\''+id+'\')">x</button></div><div id="cardapio-'+id+'"></div>';
+  var cardHtml='<div class="busca-wrap"><span class="busca-icon">🔍</span><input class="busca-input" id="busca-'+id+'" type="text" value="'+(buscaTermos[id]||'').replace(/"/g,'&quot;')+'" placeholder="Buscar produto..." oninput="filtrarCardapio(\''+id+'\')" autocomplete="off"><button class="busca-clear" id="busca-clear-'+id+'" onclick="limparBusca(\''+id+'\')">x</button></div><div id="cardapio-'+id+'"></div>';
   var itensHtml='';
   if(c.itens.length>0){
     itensHtml='<div class="itens-list"><div class="sec-title" style="margin-top:6px">ITENS NA COMANDA</div>';
@@ -451,6 +489,7 @@ function filtrarCardapio(id){
   if(!container)return;
   function removeAc(s){return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
   var termo=removeAc(inputEl?inputEl.value:'').trim();
+  if(inputEl)buscaTermos[id]=inputEl.value;
   if(clearEl)clearEl.style.display=termo?'block':'none';
   var html='';
   if(termo===''){
@@ -468,7 +507,7 @@ function filtrarCardapio(id){
   }
   if(container)container.innerHTML=html;
 }
-function limparBusca(id){var el=document.getElementById('busca-'+id);if(el){el.value='';el.focus();}filtrarCardapio(id);}
+function limparBusca(id){buscaTermos[id]='';var el=document.getElementById('busca-'+id);if(el){el.value='';el.focus();}filtrarCardapio(id);}
 function renderGeral(){
   var ids=Object.keys(comandas),totAb=ids.reduce(function(s,id){return s+rest(id);},0);
   document.getElementById('pg-total').textContent=fmt(totAb);
@@ -551,6 +590,7 @@ document.getElementById('f-nome').addEventListener('keydown',function(e){if(e.ke
 renderTudo();
 setSync('off');
 initSheets();
+iniciarSync();
 </script>
 </body>
 </html>
