@@ -314,7 +314,9 @@ function mesclarRemoto(pac){
   var rc=pac.comandas||{};
   Object.keys(rc).forEach(function(id){
     if(removidas[id])return;
-    if(!comandas[id])comandas[id]=rc[id];
+    if(!comandas[id]){comandas[id]=rc[id];return;}
+    var tl=comandas[id].ts||0,tr=rc[id].ts||0;
+    if(tr>tl)comandas[id]=rc[id];
   });
   Object.keys(comandas).forEach(function(id){if(removidas[id])delete comandas[id];});
   var rh=pac.historico||[];
@@ -349,13 +351,11 @@ async function carregarEstado(){
     var pac=JSON.parse(d.values[0][0]);
     if(!pac.ts||pac.ts<=estadoTs)return;
     estadoTs=pac.ts;
-    var rr=pac.removidas||{};
-    Object.keys(rr).forEach(function(k){if(!removidas[k]||rr[k]>removidas[k])removidas[k]=rr[k];});
-    var novas=pac.comandas||{};
-    Object.keys(novas).forEach(function(k){if(removidas[k])delete novas[k];});
-    comandas=novas;
-    historico=pac.historico||[];
-    purgarAntigos();
+    var rc=pac.comandas||{};
+    Object.keys(comandas).forEach(function(id){
+      if(!rc[id]&&(comandas[id].ts||0)<pac.ts)delete comandas[id];
+    });
+    mesclarRemoto(pac);
     var ids=Object.keys(comandas);
     if(abaAtiva&&!comandas[abaAtiva])abaAtiva=ids.length?ids[0]:null;
     if(!abaAtiva&&ids.length)abaAtiva=ids[0];
@@ -436,7 +436,7 @@ function criarComanda(){
   var mesa=document.getElementById('f-mesa').value.trim();
   if(!nome){document.getElementById('f-nome').focus();return;}
   var id=Date.now().toString();
-  comandas[id]={nome:nome,mesa:mesa||'-',hora:hora(),itens:[],adiantado:0};
+  comandas[id]={nome:nome,mesa:mesa||'-',hora:hora(),itens:[],adiantado:0,ts:Date.now()};
   fecharModal('m-nova');
   document.getElementById('f-nome').value='';document.getElementById('f-mesa').value='';
   renderTudo();ativarAba(id);irView('comandas');
@@ -448,6 +448,7 @@ async function addItem(cid,nome,preco){
   var cat=cardapio.find(function(c){return c.itens.find(function(i){return i.nome===nome;});})||{cat:''};
   if(ex)ex.qtd++;
   else comandas[cid].itens.push({nome:nome,preco:preco,qtd:1,hora:hora(),cat:cat.cat});
+  comandas[cid].ts=Date.now();
   renderPainel(cid);renderAbas();
   var bel=document.getElementById('busca-'+cid);
   if(bel&&buscaTermos[cid]){bel.value=buscaTermos[cid];filtrarCardapio(cid);}
@@ -461,12 +462,13 @@ async function addItem(cid,nome,preco){
 function chgQtd(cid,idx,d){
   comandas[cid].itens[idx].qtd+=d;
   if(comandas[cid].itens[idx].qtd<=0)comandas[cid].itens.splice(idx,1);
+  comandas[cid].ts=Date.now();
   renderPainel(cid);renderAbas();salvarEstado();
 }
 function abrirAdiantamento(id){adianId=id;document.getElementById('f-adian').value=comandas[id].adiantado||'';abrirModal('m-adian');}
 function confAdian(){
   var v=parseFloat(document.getElementById('f-adian').value)||0;
-  comandas[adianId].adiantado=v;fecharModal('m-adian');
+  comandas[adianId].adiantado=v;comandas[adianId].ts=Date.now();fecharModal('m-adian');
   renderPainel(adianId);renderAbas();salvarEstado();toast('Adiantamento de '+fmt(v)+' registrado');
 }
 function abrirConta(id){
