@@ -137,12 +137,12 @@ select.finput{appearance:none}
     <div><div class="tg-lbl">Total em aberto</div><div class="tg-sub" id="pg-qtd">0 comandas</div></div>
     <div class="tg-val" id="pg-total">R$ 0</div>
   </div>
+  <button class="btn-full" style="background:#2a2a2a;color:var(--t2);border:1px solid var(--b);font-size:13px" onclick="resetTudo()">🔄 LIMPAR COMANDAS TRAVADAS (emergencia)</button>
+  <div class="sep"></div>
   <div id="pg-lista"></div>
   <div class="sep"></div>
   <div class="hsec"><div class="htit">🏆 MAIS VENDIDOS</div><div id="hprod"></div></div>
   <div class="hsec"><div class="htit">👤 CLIENTES DO DIA</div><div id="hcli"></div></div>
-  <div class="sep"></div>
-  <button class="btn-full" style="background:#2a2a2a;color:var(--t2);border:1px solid var(--b)" onclick="resetTudo()">🔄 LIMPAR COMANDAS TRAVADAS (emergencia)</button>
 </div>
 <div class="pe" id="pe">
   <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--am);letter-spacing:2px;margin-bottom:12px">📋 CARDÁPIO</div>
@@ -576,7 +576,7 @@ function renderGeral(){
   historico.flatMap(function(h){return h.itens;}).concat(Object.values(comandas).flatMap(function(c){return c.itens;})).forEach(function(i){if(!pm[i.nome])pm[i.nome]={qtd:0,val:0};pm[i.nome].qtd+=i.qtd;pm[i.nome].val+=i.preco*i.qtd;});
   var rank=Object.entries(pm).sort(function(a,b){return b[1].qtd-a[1].qtd;}).slice(0,8);
   document.getElementById('hprod').innerHTML=rank.length?rank.map(function(e,i){return '<div class="hrow"><span><span class="hrank">'+(i+1)+'.</span>'+e[0]+'</span><span><b>'+e[1].qtd+' un</b> '+fmt(e[1].val)+'</span></div>';}).join(''):'<div style="color:var(--t2);font-size:13px;padding:10px 0">Nenhuma venda ainda</div>';
-  document.getElementById('hcli').innerHTML=historico.length?historico.slice().reverse().map(function(h){return '<div class="hrow"><span>'+h.nome+' <span style="color:var(--t2);font-size:11px">'+h.horaA+'-'+h.horaF+'</span> <span style="color:var(--v);font-size:10px">'+( h.pgto||'')+'</span></span><b style="color:var(--am)">'+fmt(h.total)+'</b></div>';}).join(''):'<div style="color:var(--t2);font-size:13px;padding:10px 0">Nenhuma conta fechada ainda</div>';
+  document.getElementById('hcli').innerHTML=historico.length?historico.slice().reverse().slice(0,20).map(function(h){return '<div class="hrow"><span>'+h.nome+' <span style="color:var(--t2);font-size:11px">'+h.horaA+'-'+h.horaF+'</span> <span style="color:var(--v);font-size:10px">'+( h.pgto||'')+'</span></span><b style="color:var(--am)">'+fmt(h.total)+'</b></div>';}).join(''):'<div style="color:var(--t2);font-size:13px;padding:10px 0">Nenhuma conta fechada ainda</div>';
 }
 function renderCardapioEdit(){
   var html='';
