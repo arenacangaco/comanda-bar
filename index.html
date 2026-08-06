@@ -141,6 +141,8 @@ select.finput{appearance:none}
   <div class="sep"></div>
   <div class="hsec"><div class="htit">🏆 MAIS VENDIDOS</div><div id="hprod"></div></div>
   <div class="hsec"><div class="htit">👤 CLIENTES DO DIA</div><div id="hcli"></div></div>
+  <div class="sep"></div>
+  <button class="btn-full" style="background:#2a2a2a;color:var(--t2);border:1px solid var(--b)" onclick="resetTudo()">🔄 LIMPAR COMANDAS TRAVADAS (emergencia)</button>
 </div>
 <div class="pe" id="pe">
   <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--am);letter-spacing:2px;margin-bottom:12px">📋 CARDÁPIO</div>
@@ -300,10 +302,39 @@ async function descontarEstoque(nome,qtd){
   }catch(e){console.log('estoque',e);}
 }
 
+function purgarAntigos(){
+  var hoje=dHoje(),lim=Date.now()-43200000;
+  historico=historico.filter(function(h){return !h.data||h.data===hoje;});
+  Object.keys(removidas).forEach(function(k){if(removidas[k]<lim)delete removidas[k];});
+}
+function mesclarRemoto(pac){
+  if(!pac)return;
+  var rr=pac.removidas||{};
+  Object.keys(rr).forEach(function(k){if(!removidas[k]||rr[k]>removidas[k])removidas[k]=rr[k];});
+  var rc=pac.comandas||{};
+  Object.keys(rc).forEach(function(id){
+    if(removidas[id])return;
+    if(!comandas[id])comandas[id]=rc[id];
+  });
+  Object.keys(comandas).forEach(function(id){if(removidas[id])delete comandas[id];});
+  var rh=pac.historico||[];
+  var vistos={};
+  historico.forEach(function(h){vistos[h.nome+'|'+h.horaA+'|'+h.horaF]=1;});
+  rh.forEach(function(h){
+    var k=h.nome+'|'+h.horaA+'|'+h.horaF;
+    if(!vistos[k]){historico.push(h);vistos[k]=1;}
+  });
+  purgarAntigos();
+}
 async function salvarEstado(){
   try{
+    try{
+      var d=await gReq('GET','/values/Abertas!A2');
+      if(d.values&&d.values[0]&&d.values[0][0])mesclarRemoto(JSON.parse(d.values[0][0]));
+    }catch(e){}
+    purgarAntigos();
     estadoTs=Date.now();
-    var pacote=JSON.stringify({ts:estadoTs,comandas:comandas,historico:historico});
+    var pacote=JSON.stringify({ts:estadoTs,comandas:comandas,historico:historico,removidas:removidas});
     await gReq('PUT','/values/Abertas!A2?valueInputOption=RAW',{values:[[pacote]]});
   }catch(e){console.log('salvarEstado',e);}
 }
@@ -318,14 +349,34 @@ async function carregarEstado(){
     var pac=JSON.parse(d.values[0][0]);
     if(!pac.ts||pac.ts<=estadoTs)return;
     estadoTs=pac.ts;
-    comandas=pac.comandas||{};
+    var rr=pac.removidas||{};
+    Object.keys(rr).forEach(function(k){if(!removidas[k]||rr[k]>removidas[k])removidas[k]=rr[k];});
+    var novas=pac.comandas||{};
+    Object.keys(novas).forEach(function(k){if(removidas[k])delete novas[k];});
+    comandas=novas;
     historico=pac.historico||[];
+    purgarAntigos();
     var ids=Object.keys(comandas);
     if(abaAtiva&&!comandas[abaAtiva])abaAtiva=ids.length?ids[0]:null;
     if(!abaAtiva&&ids.length)abaAtiva=ids[0];
     renderTudo();
     if(abaAtiva)ativarAba(abaAtiva);
   }catch(e){console.log('carregarEstado',e);}
+}
+async function resetTudo(){
+  var ids=Object.keys(comandas);
+  if(!ids.length){toast('Nao ha comandas abertas');return;}
+  var lista=ids.map(function(id){return '- '+comandas[id].nome+' ('+fmt(rest(id))+')';}).join('\n');
+  if(!confirm('ATENCAO: as '+ids.length+' comandas abaixo serao APAGADAS em todos os aparelhos:\n\n'+lista+'\n\nUse so para comandas travadas. Feche normalmente as de clientes que ainda estao consumindo.\n\nO historico de vendas na planilha NAO e afetado.\n\nApagar mesmo assim?'))return;
+  Object.keys(comandas).forEach(function(id){removidas[id]=Date.now();});
+  comandas={};abaAtiva=null;
+  try{
+    estadoTs=Date.now();
+    var pacote=JSON.stringify({ts:estadoTs,comandas:{},historico:historico,removidas:removidas});
+    await gReq('PUT','/values/Abertas!A2?valueInputOption=RAW',{values:[[pacote]]});
+    toast('Comandas limpas em todos os aparelhos');
+  }catch(e){toast('Limpo so neste aparelho','err');}
+  renderTudo();irView('comandas');
 }
 function iniciarSync(){setInterval(carregarEstado,7000);setTimeout(carregarEstado,1500);}
 
@@ -349,7 +400,7 @@ function carregarCardapio(){
 }
 var cardapio=carregarCardapio();
 var comandas={},historico=[],abaAtiva=null,view='comandas',contaId=null,adianId=null,catSel=0,pgtoSel=null;
-var buscaTermos={},estadoTs=0,syncPausado=false;
+var buscaTermos={},estadoTs=0,syncPausado=false,removidas={};
 function hora(){return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
 function dHoje(){return new Date().toLocaleDateString('pt-BR');}
 function fmt(v){return 'R$ '+v.toFixed(2).replace('.',',');}
@@ -374,7 +425,7 @@ function selPgto(v){
 }
 function cancelarComanda(id){
   if(!confirm('Cancelar a comanda de '+comandas[id].nome+'?'))return;
-  delete comandas[id];
+  removidas[id]=Date.now();delete comandas[id];
   var ids=Object.keys(comandas);abaAtiva=ids.length>0?ids[0]:null;
   renderTudo();if(abaAtiva)ativarAba(abaAtiva);else irView('comandas');
   salvarEstado();
@@ -435,12 +486,14 @@ async function confPagamento(){
   var c=comandas[contaId],tot=total(contaId),pagar=Math.max(0,tot-c.adiantado),hf=hora();
   try{
     await appendRow('Vendas',[dHoje(),c.hora,hf,c.nome,c.mesa,tot,c.adiantado,pagar,pgtoSel]);
-    var fatAcum=historico.reduce(function(s,h){return s+h.total;},0)+tot;
-    await appendRow('Faturamento',[dHoje(),hf,c.nome,c.mesa,tot,c.adiantado,pagar,pgtoSel,historico.length+1,fatAcum]);
+    var hj=dHoje();
+    var doDia=historico.filter(function(h){return h.data===hj;});
+    var fatDia=doDia.reduce(function(s,h){return s+h.total;},0)+tot;
+    await appendRow('Faturamento',[hj,hf,c.nome,c.mesa,tot,c.adiantado,pagar,pgtoSel,doDia.length+1,fatDia]);
     toast('Venda salva no Google Sheets!');
   }catch(e){toast('Salvo so localmente - sem internet','err');}
-  historico.push({nome:c.nome,mesa:c.mesa,horaA:c.hora,horaF:hf,itens:c.itens.slice(),total:tot,adiantado:c.adiantado,pgto:pgtoSel});
-  delete comandas[contaId];contaId=null;
+  historico.push({data:dHoje(),nome:c.nome,mesa:c.mesa,horaA:c.hora,horaF:hf,itens:c.itens.slice(),total:tot,adiantado:c.adiantado,pgto:pgtoSel});
+  removidas[contaId]=Date.now();delete comandas[contaId];contaId=null;
   btn.disabled=false;btn.textContent='PAGO';
   salvarEstado();
   fecharModal('m-conta');
@@ -587,6 +640,7 @@ function fecharModal(id){document.getElementById(id).classList.remove('on');}
 document.querySelectorAll('.overlay').forEach(function(o){o.addEventListener('click',function(e){if(e.target===o)fecharModal(o.id);});});
 document.getElementById('f-mesa').addEventListener('keydown',function(e){if(e.key==='Enter')criarComanda();});
 document.getElementById('f-nome').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('f-mesa').focus();});
+purgarAntigos();
 renderTudo();
 setSync('off');
 initSheets();
