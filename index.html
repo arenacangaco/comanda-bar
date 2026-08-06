@@ -303,8 +303,8 @@ async function descontarEstoque(nome,qtd){
 }
 
 function purgarAntigos(){
-  var hoje=dHoje(),lim=Date.now()-43200000;
-  historico=historico.filter(function(h){return !h.data||h.data===hoje;});
+  var hoje=dHoje(),lim=Date.now()-129600000;
+  historico=historico.filter(function(h){return h.data===hoje;});
   Object.keys(removidas).forEach(function(k){if(removidas[k]<lim)delete removidas[k];});
 }
 function mesclarRemoto(pac){
