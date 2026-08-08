@@ -263,7 +263,7 @@ async function initSheets(){
           if(criar.includes('Pedidos'))await appendRow('Pedidos',['Data','Hora','Cliente','Mesa','Produto','Categoria','Qtd','Preco','Subtotal']);
           if(criar.includes('Faturamento'))await appendRow('Faturamento',['Data','Hr Fechamento','Cliente','Mesa','Total (R$)','Adiantado (R$)','Total Pago (R$)','Pagamento','Num Comandas','Fat Dia (R$)']);
           if(criar.includes('Estoque'))await initEstoque();
-          if(criar.includes('Abertas'))await appendRow('Abertas',['ESTADO_JSON']);
+          if(criar.includes('Abertas'))await appendRow('Abertas',['ID Comanda','Dados da Comanda','','Removidas']);
         }
       }catch(e){console.log('setup',e);}
     }catch(e){setSync('off');}
@@ -285,10 +285,16 @@ async function initEstoque(){
     await appendRow('Estoque',[r[0],r[1],r[2],'OK']);
   }
 }
+var estCache=null,estCacheTs=0;
+async function carregarEstoqueCache(){
+  if(estCache&&Date.now()-estCacheTs<300000)return estCache;
+  var data=await gReq('GET','/values/Estoque!A:C');
+  estCache=data.values||[];estCacheTs=Date.now();
+  return estCache;
+}
 async function descontarEstoque(nome,qtd){
   try{
-    var data=await gReq('GET','/values/Estoque!A:C');
-    var rows=data.values||[];
+    var rows=await carregarEstoqueCache();
     var idx=-1;
     for(var i=1;i<rows.length;i++){
       if((rows[i][0]||'').toLowerCase()===nome.toLowerCase()){idx=i+1;break;}
@@ -298,6 +304,7 @@ async function descontarEstoque(nome,qtd){
     var nova=Math.max(0,atual-qtd);
     var min=parseInt(rows[idx-1][2])||0;
     var status=nova<=min?'REPOR':nova<=min*2?'ATENCAO':'OK';
+    rows[idx-1][1]=nova;
     await gReq('PUT','/values/Estoque!B'+idx+':D'+idx+'?valueInputOption=USER_ENTERED',{values:[[nova,min,status]]});
   }catch(e){console.log('estoque',e);}
 }
@@ -319,26 +326,66 @@ function mesclarRemoto(pac){
     if(tr>tl)comandas[id]=rc[id];
   });
   Object.keys(comandas).forEach(function(id){if(removidas[id])delete comandas[id];});
-  var rh=pac.historico||[];
-  var vistos={};
-  historico.forEach(function(h){vistos[h.nome+'|'+h.horaA+'|'+h.horaF]=1;});
-  rh.forEach(function(h){
-    var k=h.nome+'|'+h.horaA+'|'+h.horaF;
-    if(!vistos[k]){historico.push(h);vistos[k]=1;}
-  });
   purgarAntigos();
 }
-async function salvarEstado(){
+var salvarTimer=null,salvarPend=false;
+function salvarEstado(forcar){
+  if(forcar){clearTimeout(salvarTimer);salvarTimer=null;return salvarEstadoAgora();}
+  salvarPend=true;
+  if(salvarTimer)return;
+  salvarTimer=setTimeout(function(){
+    salvarTimer=null;
+    if(salvarPend){salvarPend=false;salvarEstadoAgora();}
+  },2000);
+}
+async function salvarEstadoAgora(){
   try{
     try{
-      var d=await gReq('GET','/values/Abertas!A2');
-      if(d.values&&d.values[0]&&d.values[0][0])mesclarRemoto(JSON.parse(d.values[0][0]));
+      var atual=await lerEstadoRemoto();
+      if(atual)mesclarRemoto(atual);
     }catch(e){}
     purgarAntigos();
     estadoTs=Date.now();
-    var pacote=JSON.stringify({ts:estadoTs,comandas:comandas,historico:historico,removidas:removidas});
-    await gReq('PUT','/values/Abertas!A2?valueInputOption=RAW',{values:[[pacote]]});
+    var ids=Object.keys(comandas);
+    var linhas=[];
+    for(var i=0;i<ids.length;i++){
+      linhas.push([ids[i],JSON.stringify(comandas[ids[i]])]);
+    }
+    // completar com vazios para apagar linhas de comandas ja fechadas
+    while(linhas.length<200)linhas.push(['','']);
+    var rmvStr=JSON.stringify(removidas);
+    if(rmvStr.length>40000){
+      var rmv={},ks=Object.keys(removidas).sort(function(a,b){return removidas[b]-removidas[a];}).slice(0,100);
+      ks.forEach(function(k){rmv[k]=removidas[k];});
+      removidas=rmv;rmvStr=JSON.stringify(removidas);
+    }
+    ultimoPacote=assinaturaEstado();
+    await gReq('POST','/values:batchUpdate',{valueInputOption:'RAW',data:[
+      {range:'Abertas!A2:B201',values:linhas},
+      {range:'Abertas!D2',values:[[rmvStr]]}
+    ]});
   }catch(e){console.log('salvarEstado',e);}
+}
+function assinaturaEstado(){
+  var ids=Object.keys(comandas).sort();
+  var s='';
+  for(var i=0;i<ids.length;i++)s+=ids[i]+':'+(comandas[ids[i]].ts||0)+';';
+  return s;
+}
+async function lerEstadoRemoto(){
+  var d=await gReq('GET','/values/Abertas!A2:D201');
+  var rows=(d&&d.values)||[];
+  var cs={},rmv={};
+  for(var i=0;i<rows.length;i++){
+    var id=rows[i][0],js=rows[i][1];
+    if(id&&js){
+      try{cs[String(id)]=JSON.parse(js);}catch(e){}
+    }
+    if(i===0&&rows[i][3]){
+      try{rmv=JSON.parse(rows[i][3]);}catch(e){}
+    }
+  }
+  return {comandas:cs,removidas:rmv};
 }
 async function carregarEstado(){
   if(syncPausado)return;
@@ -346,16 +393,16 @@ async function carregarEstado(){
   var ae=document.activeElement;
   if(ae&&ae.tagName==='INPUT')return;
   try{
-    var d=await gReq('GET','/values/Abertas!A2');
-    if(!d.values||!d.values[0]||!d.values[0][0])return;
-    var pac=JSON.parse(d.values[0][0]);
-    if(!pac.ts||pac.ts<=estadoTs)return;
-    estadoTs=pac.ts;
+    var pac=await lerEstadoRemoto();
+    if(!pac)return;
     var rc=pac.comandas||{};
     Object.keys(comandas).forEach(function(id){
-      if(!rc[id]&&(comandas[id].ts||0)<pac.ts)delete comandas[id];
+      if(!rc[id]&&removidas[id])delete comandas[id];
     });
     mesclarRemoto(pac);
+    var assin=assinaturaEstado();
+    if(assin===ultimoPacote)return;
+    ultimoPacote=assin;
     var ids=Object.keys(comandas);
     if(abaAtiva&&!comandas[abaAtiva])abaAtiva=ids.length?ids[0]:null;
     if(!abaAtiva&&ids.length)abaAtiva=ids[0];
@@ -372,8 +419,12 @@ async function resetTudo(){
   comandas={};abaAtiva=null;
   try{
     estadoTs=Date.now();
-    var pacote=JSON.stringify({ts:estadoTs,comandas:{},historico:historico,removidas:removidas});
-    await gReq('PUT','/values/Abertas!A2?valueInputOption=RAW',{values:[[pacote]]});
+    var vazio=[];while(vazio.length<200)vazio.push(['','']);
+    ultimoPacote=assinaturaEstado();
+    await gReq('POST','/values:batchUpdate',{valueInputOption:'RAW',data:[
+      {range:'Abertas!A2:B201',values:vazio},
+      {range:'Abertas!D2',values:[[JSON.stringify(removidas)]]}
+    ]});
     toast('Comandas limpas em todos os aparelhos');
   }catch(e){toast('Limpo so neste aparelho','err');}
   renderTudo();irView('comandas');
@@ -400,7 +451,7 @@ function carregarCardapio(){
 }
 var cardapio=carregarCardapio();
 var comandas={},historico=[],abaAtiva=null,view='comandas',contaId=null,adianId=null,catSel=0,pgtoSel=null;
-var buscaTermos={},estadoTs=0,syncPausado=false,removidas={};
+var buscaTermos={},estadoTs=0,syncPausado=false,removidas={},ultimoPacote='';
 function hora(){return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
 function dHoje(){return new Date().toLocaleDateString('pt-BR');}
 function fmt(v){return 'R$ '+v.toFixed(2).replace('.',',');}
@@ -428,7 +479,7 @@ function cancelarComanda(id){
   removidas[id]=Date.now();delete comandas[id];
   var ids=Object.keys(comandas);abaAtiva=ids.length>0?ids[0]:null;
   renderTudo();if(abaAtiva)ativarAba(abaAtiva);else irView('comandas');
-  salvarEstado();
+  salvarEstado(true);
   toast('Comanda cancelada');
 }
 function criarComanda(){
@@ -455,8 +506,8 @@ async function addItem(cid,nome,preco){
   if(navigator.vibrate)navigator.vibrate(25);
   try{
     await appendRow('Pedidos',[dHoje(),hora(),comandas[cid].nome,comandas[cid].mesa,nome,cat.cat,1,preco,preco]);
-    await descontarEstoque(nome,1);
-    await salvarEstado();
+    descontarEstoque(nome,1);
+    salvarEstado();
   }catch(e){toast('Sem conexao - salvo local','err');}
 }
 function chgQtd(cid,idx,d){
@@ -487,17 +538,27 @@ async function confPagamento(){
   var btn=document.getElementById('btn-pago');btn.disabled=true;btn.textContent='Salvando...';
   var c=comandas[contaId],tot=total(contaId),pagar=Math.max(0,tot-c.adiantado),hf=hora();
   try{
-    await appendRow('Vendas',[dHoje(),c.hora,hf,c.nome,c.mesa,tot,c.adiantado,pagar,pgtoSel]);
     var hj=dHoje();
-    var doDia=historico.filter(function(h){return h.data===hj;});
-    var fatDia=doDia.reduce(function(s,h){return s+h.total;},0)+tot;
-    await appendRow('Faturamento',[hj,hf,c.nome,c.mesa,tot,c.adiantado,pagar,pgtoSel,doDia.length+1,fatDia]);
+    await appendRow('Vendas',[hj,c.hora,hf,c.nome,c.mesa,tot,c.adiantado,pagar,pgtoSel]);
+    // faturamento do dia lido DIRETO da aba Vendas (nao depende da memoria do aparelho)
+    var cnt=0,fatDia=0;
+    try{
+      var vd=await gReq('GET','/values/Vendas!A:F');
+      var rows=vd.values||[];
+      for(var i=1;i<rows.length;i++){
+        if((rows[i][0]||'')!==hj)continue;
+        cnt++;
+        fatDia+=parseFloat(String(rows[i][5]||'0').replace(',','.'))||0;
+      }
+    }catch(e){cnt=1;fatDia=tot;}
+    if(!cnt){cnt=1;fatDia=tot;}
+    await appendRow('Faturamento',[hj,hf,c.nome,c.mesa,tot,c.adiantado,pagar,pgtoSel,cnt,fatDia]);
     toast('Venda salva no Google Sheets!');
   }catch(e){toast('Salvo so localmente - sem internet','err');}
   historico.push({data:dHoje(),nome:c.nome,mesa:c.mesa,horaA:c.hora,horaF:hf,itens:c.itens.slice(),total:tot,adiantado:c.adiantado,pgto:pgtoSel});
   removidas[contaId]=Date.now();delete comandas[contaId];contaId=null;
   btn.disabled=false;btn.textContent='PAGO';
-  salvarEstado();
+  salvarEstado(true);
   fecharModal('m-conta');
   var ids=Object.keys(comandas);abaAtiva=ids.length>0?ids[0]:null;
   renderTudo();if(abaAtiva)ativarAba(abaAtiva);else irView('comandas');
@@ -570,7 +631,7 @@ function renderGeral(){
   var html='';
   if(!ids.length&&!historico.length)html='<div style="text-align:center;padding:30px 0;color:var(--t2)">NENHUM MOVIMENTO HOJE</div>';
   ids.forEach(function(id){var c=comandas[id],rs=rest(id);html+='<div class="res-card" onclick="ativarAba(\''+id+'\');irView(\'comandas\')"><div><div class="res-nome">'+c.nome+'</div><div class="res-meta">'+c.mesa+' - '+c.hora+'</div></div><div><div class="res-val">'+fmt(rs)+'</div><div class="res-status st-ab">EM ABERTO</div></div></div>';});
-  historico.slice().reverse().forEach(function(h){html+='<div class="res-card" style="opacity:.55"><div><div class="res-nome">'+h.nome+'</div><div class="res-meta">'+h.mesa+' - '+h.horaA+'-'+h.horaF+'</div></div><div><div class="res-val" style="color:#4caf50">'+fmt(h.total)+'</div><div class="res-status st-pg">PAGO</div></div></div>';});
+  historico.slice().reverse().slice(0,15).forEach(function(h){html+='<div class="res-card" style="opacity:.55"><div><div class="res-nome">'+h.nome+'</div><div class="res-meta">'+h.mesa+' - '+h.horaA+'-'+h.horaF+'</div></div><div><div class="res-val" style="color:#4caf50">'+fmt(h.total)+'</div><div class="res-status st-pg">PAGO</div></div></div>';});
   document.getElementById('pg-lista').innerHTML=html;
   var pm={};
   historico.flatMap(function(h){return h.itens;}).concat(Object.values(comandas).flatMap(function(c){return c.itens;})).forEach(function(i){if(!pm[i.nome])pm[i.nome]={qtd:0,val:0};pm[i.nome].qtd+=i.qtd;pm[i.nome].val+=i.preco*i.qtd;});
