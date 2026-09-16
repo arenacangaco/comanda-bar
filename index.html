@@ -435,7 +435,7 @@ var CARDAPIO_PADRAO=[
   {cat:'🍺 Cervejas',itens:[{nome:'Heineken',preco:10},{nome:'Bud',preco:9},{nome:'Stella',preco:9},{nome:'Corona',preco:11},{nome:'Cabare Ice',preco:12},{nome:'Buxudinha',preco:5}]},
   {cat:'🥤 Refrigerantes',itens:[{nome:'Refri 2L',preco:12},{nome:'Refri 1L',preco:9.5},{nome:'Lata Coca',preco:5},{nome:'Lata Coca Zero',preco:5},{nome:'Lata Fanta Laranja',preco:5},{nome:'Lata Fanta Uva',preco:5},{nome:'Lata Sprite',preco:5},{nome:'Lata Sao Geraldo',preco:5},{nome:'Energetico',preco:13}]},
   {cat:'🥃 Cachaca',itens:[{nome:'Ypioca 1L',preco:30},{nome:'Ypioca 1/2 Litro',preco:15},{nome:'Ypioca Dose',preco:2}]},
-  {cat:'🍢 Espetinhos',itens:[{nome:'Espeto Medalhao',preco:8},{nome:'Espeto Carne',preco:7.5},{nome:'Espeto Linguica',preco:7.5},{nome:'Espeto Coracao de Frango',preco:7.5},{nome:'Espeto Porco',preco:6.5}]},
+  {cat:'🍢 Espetinhos',itens:[{nome:'Espeto Medalhao',preco:9},{nome:'Espeto Carne',preco:8.5},{nome:'Espeto Linguica',preco:7.5},{nome:'Espeto Coracao de Frango',preco:7.5},{nome:'Espeto Porco',preco:6.5}]},
   {cat:'🍽 Petiscos',itens:[{nome:'Baiao Inteiro',preco:8},{nome:'Baiao Meio',preco:4},{nome:'Pratinho',preco:8},{nome:'Salgados',preco:6}]},
   {cat:'🍬 Doces',itens:[{nome:'Trufa',preco:4},{nome:'Fini',preco:2},{nome:'Chocolate',preco:2},{nome:'Doce de Lei em Cubo',preco:1},{nome:'Chilito Pequeno',preco:1.5},{nome:'Chilito Grande',preco:3},{nome:'Pop',preco:1},{nome:'Halls',preco:2.5},{nome:'Trident',preco:3.5}]},
   {cat:'💧 Agua',itens:[{nome:'Agua',preco:2.5},{nome:'Agua C/ Gas',preco:3}]}
@@ -444,7 +444,7 @@ function salvarCardapio(){try{localStorage.setItem('cardapio_bar',JSON.stringify
 function carregarCardapio(){
   try{
     var v=localStorage.getItem('cardapio_ver');
-    if(v!=='8'){localStorage.removeItem('cardapio_bar');localStorage.setItem('cardapio_ver','8');}
+    if(v!=='9'){localStorage.removeItem('cardapio_bar');localStorage.setItem('cardapio_ver','9');}
     var s=localStorage.getItem('cardapio_bar');
     return s?JSON.parse(s):JSON.parse(JSON.stringify(CARDAPIO_PADRAO));
   }catch(e){return JSON.parse(JSON.stringify(CARDAPIO_PADRAO));}
