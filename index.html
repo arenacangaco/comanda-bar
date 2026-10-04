@@ -130,12 +130,19 @@ select.finput{appearance:none}
   </div>
   <button class="btn-novo" onclick="abrirModal('m-nova')">＋ CLIENTE</button>
 </div>
+<div id="busca-cli-wrap" style="padding:10px 14px 0;background:var(--c)">
+  <div class="busca-wrap" style="margin-bottom:0">
+    <span class="busca-icon">🔍</span>
+    <input class="busca-input" id="busca-cli" type="text" placeholder="Buscar cliente / comanda..." oninput="renderAbas()" autocomplete="off">
+    <button class="busca-clear" id="busca-cli-clear" onclick="limparBuscaCli()">x</button>
+  </div>
+</div>
 <div class="abas-wrap" id="abas-wrap"></div>
 <div id="paineis"></div>
 <div class="pg" id="pg">
   <div class="tgcard">
-    <div><div class="tg-lbl">Total em aberto</div><div class="tg-sub" id="pg-qtd">0 comandas</div></div>
-    <div class="tg-val" id="pg-total">R$ 0</div>
+    <div><div class="tg-lbl">Comandas em aberto</div><div class="tg-sub" id="pg-qtd">nenhuma no momento</div></div>
+    <div class="tg-val" id="pg-total">0</div>
   </div>
   <button class="btn-full" style="background:#2a2a2a;color:var(--t2);border:1px solid var(--b);font-size:13px" onclick="resetTudo()">🔄 LIMPAR COMANDAS TRAVADAS (emergencia)</button>
   <div class="sep"></div>
@@ -270,11 +277,11 @@ async function initSheets(){
   },500);
 }
 var ESTOQUE_ROWS=[
-  ['Heineken',24,6],['Bud',24,6],['Stella',24,6],['Corona',12,4],['Cabare Ice',24,6],['Buxudinha',48,12],
+  ['Heineken',24,6],['Bud',24,6],['Stella',24,6],['Stella Gold',24,6],['Corona',12,4],['Cabare Ice',24,6],['Buxudinha',48,12],
   ['Refri 2L',12,3],['Refri 1L',12,3],['Lata Coca',24,6],['Lata Coca Zero',24,6],['Lata Fanta Laranja',12,4],
   ['Lata Fanta Uva',12,4],['Lata Sprite',12,4],['Lata Sao Geraldo',12,4],['Energetico',12,4],
   ['Agua',24,6],['Agua C/ Gas',12,4],['Ypioca 1L',6,2],['Ypioca 1/2 Litro',6,2],['Ypioca Dose',50,10],
-  ['Espeto Medalhao',20,5],['Espeto Carne',20,5],['Espeto Linguica',20,5],['Espeto Coracao de Frango',20,5],['Espeto Porco',20,5],
+  ['Espeto Medalhao',20,5],['Espeto Carne',20,5],['Espeto Linguica',20,5],['Espeto Coracao de Frango',20,5],['Espeto Porco',20,5],['Espeto Coxinha de Frango',20,5],
   ['Baiao Inteiro',10,3],['Baiao Meio',10,3],['Pratinho',10,3],['Salgados',20,5],
   ['Trufa',20,5],['Fini',30,10],['Chocolate',20,5],['Doce de Lei em Cubo',20,5],['Chilito Pequeno',30,10],['Chilito Grande',20,5],['Pop',30,10],['Halls',30,10],['Trident',30,10]
 ];
@@ -413,7 +420,7 @@ async function carregarEstado(){
 async function resetTudo(){
   var ids=Object.keys(comandas);
   if(!ids.length){toast('Nao ha comandas abertas');return;}
-  var lista=ids.map(function(id){return '- '+comandas[id].nome+' ('+fmt(rest(id))+')';}).join('\n');
+  var lista=ids.map(function(id){var q=comandas[id].itens.reduce(function(s,i){return s+i.qtd;},0);return '- '+comandas[id].nome+' ('+q+' itens)';}).join('\n');
   if(!confirm('ATENCAO: as '+ids.length+' comandas abaixo serao APAGADAS em todos os aparelhos:\n\n'+lista+'\n\nUse so para comandas travadas. Feche normalmente as de clientes que ainda estao consumindo.\n\nO historico de vendas na planilha NAO e afetado.\n\nApagar mesmo assim?'))return;
   Object.keys(comandas).forEach(function(id){removidas[id]=Date.now();});
   comandas={};abaAtiva=null;
@@ -432,19 +439,19 @@ async function resetTudo(){
 function iniciarSync(){setInterval(carregarEstado,7000);setTimeout(carregarEstado,1500);}
 
 var CARDAPIO_PADRAO=[
-  {cat:'🍺 Cervejas',itens:[{nome:'Heineken',preco:10},{nome:'Bud',preco:9},{nome:'Stella',preco:9},{nome:'Corona',preco:11},{nome:'Cabare Ice',preco:12},{nome:'Buxudinha',preco:5}]},
+  {cat:'🍺 Cervejas',itens:[{nome:'Heineken',preco:10},{nome:'Bud',preco:9},{nome:'Stella',preco:9},{nome:'Stella Gold',preco:10},{nome:'Corona',preco:11},{nome:'Cabare Ice',preco:12},{nome:'Buxudinha',preco:5}]},
   {cat:'🥤 Refrigerantes',itens:[{nome:'Refri 2L',preco:12},{nome:'Refri 1L',preco:9.5},{nome:'Lata Coca',preco:5},{nome:'Lata Coca Zero',preco:5},{nome:'Lata Fanta Laranja',preco:5},{nome:'Lata Fanta Uva',preco:5},{nome:'Lata Sprite',preco:5},{nome:'Lata Sao Geraldo',preco:5},{nome:'Energetico',preco:13}]},
   {cat:'🥃 Cachaca',itens:[{nome:'Ypioca 1L',preco:30},{nome:'Ypioca 1/2 Litro',preco:15},{nome:'Ypioca Dose',preco:2}]},
-  {cat:'🍢 Espetinhos',itens:[{nome:'Espeto Medalhao',preco:9},{nome:'Espeto Carne',preco:8.5},{nome:'Espeto Linguica',preco:7.5},{nome:'Espeto Coracao de Frango',preco:7.5},{nome:'Espeto Porco',preco:6.5}]},
+  {cat:'🍢 Espetinhos',itens:[{nome:'Espeto Medalhao',preco:9},{nome:'Espeto Carne',preco:8.5},{nome:'Espeto Linguica',preco:7.5},{nome:'Espeto Coracao de Frango',preco:7.5},{nome:'Espeto Porco',preco:6.5},{nome:'Espeto Coxinha de Frango',preco:7.5}]},
   {cat:'🍽 Petiscos',itens:[{nome:'Baiao Inteiro',preco:8},{nome:'Baiao Meio',preco:4},{nome:'Pratinho',preco:8},{nome:'Salgados',preco:6}]},
   {cat:'🍬 Doces',itens:[{nome:'Trufa',preco:4},{nome:'Fini',preco:2},{nome:'Chocolate',preco:2},{nome:'Doce de Lei em Cubo',preco:1},{nome:'Chilito Pequeno',preco:1.5},{nome:'Chilito Grande',preco:3},{nome:'Pop',preco:1},{nome:'Halls',preco:2.5},{nome:'Trident',preco:3.5}]},
-  {cat:'💧 Agua',itens:[{nome:'Agua',preco:2.5},{nome:'Agua C/ Gas',preco:3}]}
+  {cat:'💧 Agua',itens:[{nome:'Agua',preco:2.5},{nome:'Agua C/ Gas',preco:3.5}]}
 ];
 function salvarCardapio(){try{localStorage.setItem('cardapio_bar',JSON.stringify(cardapio));}catch(e){}}
 function carregarCardapio(){
   try{
     var v=localStorage.getItem('cardapio_ver');
-    if(v!=='9'){localStorage.removeItem('cardapio_bar');localStorage.setItem('cardapio_ver','9');}
+    if(v!=='10'){localStorage.removeItem('cardapio_bar');localStorage.setItem('cardapio_ver','10');}
     var s=localStorage.getItem('cardapio_bar');
     return s?JSON.parse(s):JSON.parse(JSON.stringify(CARDAPIO_PADRAO));
   }catch(e){return JSON.parse(JSON.stringify(CARDAPIO_PADRAO));}
@@ -563,15 +570,35 @@ async function confPagamento(){
   var ids=Object.keys(comandas);abaAtiva=ids.length>0?ids[0]:null;
   renderTudo();if(abaAtiva)ativarAba(abaAtiva);else irView('comandas');
 }
+function semAcento(s){return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+function limparBuscaCli(){
+  var el=document.getElementById('busca-cli');
+  if(el){el.value='';el.focus();}
+  renderAbas();
+}
 function renderAbas(){
   var w=document.getElementById('abas-wrap');w.innerHTML='';
+  var inp=document.getElementById('busca-cli');
+  var termo=semAcento(inp?inp.value:'').trim();
+  var cl=document.getElementById('busca-cli-clear');
+  if(cl)cl.style.display=termo?'block':'none';
+  var achou=0;
   Object.keys(comandas).forEach(function(id){
-    var c=comandas[id];var qtd=c.itens.reduce(function(s,i){return s+i.qtd;},0);
+    var c=comandas[id];
+    if(termo&&semAcento(c.nome).indexOf(termo)<0&&semAcento(c.mesa||'').indexOf(termo)<0)return;
+    achou++;
+    var qtd=c.itens.reduce(function(s,i){return s+i.qtd;},0);
     var d=document.createElement('div');d.className='aba'+(id===abaAtiva?' on':'');
     d.onclick=function(){ativarAba(id);irView('comandas');};
     d.innerHTML=c.nome+(qtd>0?'<span class="bdg">'+qtd+'</span>':'');
     w.appendChild(d);
   });
+  if(termo&&!achou){
+    var v=document.createElement('div');
+    v.style.cssText='color:var(--t2);font-family:\'Barlow Condensed\',sans-serif;font-size:13px;padding:7px 4px;letter-spacing:1px';
+    v.textContent='Nenhuma comanda encontrada';
+    w.appendChild(v);
+  }
 }
 function renderPaineis(){
   var cont=document.getElementById('paineis');cont.innerHTML='';
@@ -625,19 +652,19 @@ function filtrarCardapio(id){
 }
 function limparBusca(id){buscaTermos[id]='';var el=document.getElementById('busca-'+id);if(el){el.value='';el.focus();}filtrarCardapio(id);}
 function renderGeral(){
-  var ids=Object.keys(comandas),totAb=ids.reduce(function(s,id){return s+rest(id);},0);
-  document.getElementById('pg-total').textContent=fmt(totAb);
-  document.getElementById('pg-qtd').textContent=ids.length+' comanda'+(ids.length!==1?'s':'')+' em aberto';
+  var ids=Object.keys(comandas);
+  document.getElementById('pg-total').textContent=ids.length;
+  document.getElementById('pg-qtd').textContent=ids.length?('comanda'+(ids.length!==1?'s':'')+' em atendimento'):'nenhuma no momento';
   var html='';
   if(!ids.length&&!historico.length)html='<div style="text-align:center;padding:30px 0;color:var(--t2)">NENHUM MOVIMENTO HOJE</div>';
-  ids.forEach(function(id){var c=comandas[id],rs=rest(id);html+='<div class="res-card" onclick="ativarAba(\''+id+'\');irView(\'comandas\')"><div><div class="res-nome">'+c.nome+'</div><div class="res-meta">'+c.mesa+' - '+c.hora+'</div></div><div><div class="res-val">'+fmt(rs)+'</div><div class="res-status st-ab">EM ABERTO</div></div></div>';});
-  historico.slice().reverse().slice(0,15).forEach(function(h){html+='<div class="res-card" style="opacity:.55"><div><div class="res-nome">'+h.nome+'</div><div class="res-meta">'+h.mesa+' - '+h.horaA+'-'+h.horaF+'</div></div><div><div class="res-val" style="color:#4caf50">'+fmt(h.total)+'</div><div class="res-status st-pg">PAGO</div></div></div>';});
+  ids.forEach(function(id){var c=comandas[id],qt=c.itens.reduce(function(s,i){return s+i.qtd;},0);html+='<div class="res-card" onclick="ativarAba(\''+id+'\');irView(\'comandas\')"><div><div class="res-nome">'+c.nome+'</div><div class="res-meta">'+c.mesa+' - '+c.hora+'</div></div><div><div class="res-val" style="font-size:18px">'+qt+' item'+(qt!==1?'s':'')+'</div><div class="res-status st-ab">EM ABERTO</div></div></div>';});
+  historico.slice().reverse().slice(0,15).forEach(function(h){html+='<div class="res-card" style="opacity:.55"><div><div class="res-nome">'+h.nome+'</div><div class="res-meta">'+h.mesa+' - '+h.horaA+'-'+h.horaF+'</div></div><div><div class="res-status st-pg">PAGO</div></div></div>';});
   document.getElementById('pg-lista').innerHTML=html;
   var pm={};
   historico.flatMap(function(h){return h.itens;}).concat(Object.values(comandas).flatMap(function(c){return c.itens;})).forEach(function(i){if(!pm[i.nome])pm[i.nome]={qtd:0,val:0};pm[i.nome].qtd+=i.qtd;pm[i.nome].val+=i.preco*i.qtd;});
   var rank=Object.entries(pm).sort(function(a,b){return b[1].qtd-a[1].qtd;}).slice(0,8);
-  document.getElementById('hprod').innerHTML=rank.length?rank.map(function(e,i){return '<div class="hrow"><span><span class="hrank">'+(i+1)+'.</span>'+e[0]+'</span><span><b>'+e[1].qtd+' un</b> '+fmt(e[1].val)+'</span></div>';}).join(''):'<div style="color:var(--t2);font-size:13px;padding:10px 0">Nenhuma venda ainda</div>';
-  document.getElementById('hcli').innerHTML=historico.length?historico.slice().reverse().slice(0,20).map(function(h){return '<div class="hrow"><span>'+h.nome+' <span style="color:var(--t2);font-size:11px">'+h.horaA+'-'+h.horaF+'</span> <span style="color:var(--v);font-size:10px">'+( h.pgto||'')+'</span></span><b style="color:var(--am)">'+fmt(h.total)+'</b></div>';}).join(''):'<div style="color:var(--t2);font-size:13px;padding:10px 0">Nenhuma conta fechada ainda</div>';
+  document.getElementById('hprod').innerHTML=rank.length?rank.map(function(e,i){return '<div class="hrow"><span><span class="hrank">'+(i+1)+'.</span>'+e[0]+'</span><span><b>'+e[1].qtd+' un</b></span></div>';}).join(''):'<div style="color:var(--t2);font-size:13px;padding:10px 0">Nenhuma venda ainda</div>';
+  document.getElementById('hcli').innerHTML=historico.length?historico.slice().reverse().slice(0,20).map(function(h){return '<div class="hrow"><span>'+h.nome+' <span style="color:var(--t2);font-size:11px">'+h.horaA+'-'+h.horaF+'</span></span><b style="color:var(--v);font-size:11px">'+(h.pgto||'')+'</b></div>';}).join(''):'<div style="color:var(--t2);font-size:13px;padding:10px 0">Nenhuma conta fechada ainda</div>';
 }
 function renderCardapioEdit(){
   var html='';
@@ -682,6 +709,7 @@ function criarCat(){
 function irView(v){
   view=v;
   document.getElementById('abas-wrap').style.display=v==='comandas'?'flex':'none';
+  document.getElementById('busca-cli-wrap').style.display=v==='comandas'?'block':'none';
   document.getElementById('paineis').style.display=v==='comandas'?'block':'none';
   document.getElementById('vazia').style.display=(v==='comandas'&&!Object.keys(comandas).length)?'block':'none';
   document.getElementById('pg').className='pg'+(v==='geral'?' on':'');
